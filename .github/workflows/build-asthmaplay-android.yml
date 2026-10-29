@@ -24,11 +24,20 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      # Finds the folder containing gradlew, even if the project is in a subfolder.
+      - name: Locate project
+        run: |
+          GRADLEW=$(find . -name gradlew -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "gradlew not found. Repo contents:"; ls -R | head -50; exit 1
+          fi
+          DIR=$(dirname "$GRADLEW")
+          echo "Project dir: $DIR"
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          chmod +x "$GRADLEW"
 
-      # build.gradle.kts expects debug.keystore in the project root, but the zip doesn't include it.
       - name: Create debug keystore
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -f debug.keystore ]; then
             keytool -genkeypair -v -keystore debug.keystore \
@@ -37,9 +46,8 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      # Optional: add GEMINI_API_KEY as a repo secret (Settings > Secrets and variables > Actions).
-      # Also uncomment the GEMINI_API_KEY line in .env.example if the app uses it.
       - name: Create .env
+        working-directory: ${{ env.PROJECT_DIR }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -48,11 +56,12 @@ jobs:
           fi
 
       - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AsthmaPlay-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
